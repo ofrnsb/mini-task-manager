@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t mini-task-manager .
+      - name: Smoke test the image
+        run: |
+          docker run -d --name app -p 3001:3001 mini-task-manager
+          for i in $(seq 1 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' app)" = healthy ] && break
+            sleep 1
+          done
+          docker inspect -f '{{.State.Health.Status}}' app | grep -q healthy
+          curl -fsS -X POST localhost:3001/api/tasks -H 'content-type: application/json' -d '{"title":"smoke"}'
+          curl -fsS localhost:3001/api/audit-logs/verify
+          curl -fsS localhost:3001/ | grep -q '<div id="root">'
